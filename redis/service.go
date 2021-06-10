@@ -2,47 +2,51 @@ package redis
 
 import (
 	"context"
+	"fmt"
+	"log"
 	"time"
 
-	"github.com/go-redis/cache/v8"
 	"github.com/go-redis/redis/v8"
 )
 
 type RedisConf struct {
-	Address    map[string]string
+	Address    string
 	ExpireTime time.Duration
 	Size       int
 }
 
 type Client struct {
-	RedisCache *cache.Cache
+	RedisClient *redis.Client
 }
 
 func NewClient(c RedisConf) Client {
-	ring := redis.NewRing(&redis.RingOptions{
-		Addrs: c.Address,
+	rdb := redis.NewClient(&redis.Options{
+		Addr:     c.Address,
+		Password: "",
+		DB:       0,
 	})
 
-	rcache := cache.New(&cache.Options{
-		Redis:      ring,
-		LocalCache: cache.NewTinyLFU(c.Size, c.ExpireTime),
-	})
+	log.Print("Setting up redis connection")
+
+	if err := rdb.Ping(context.TODO()).Err(); err != nil {
+		log.Fatal(err)
+	}
 
 	cli := Client{
-		RedisCache: rcache,
+		RedisClient: rdb,
 	}
 
 	return cli
 }
 
 func (c Client) Set(ctx context.Context, key, val string) error {
-	err := c.RedisCache.Set(&cache.Item{
-		Ctx:   ctx,
-		Key:   key,
-		Value: val,
-	})
+	// err := c.RedisClient.Set(ctx, key, val, 0).Err()
 
+	pipe := c.RedisClient.TxPipeline()
+	pipe.Set(ctx, key, val, 0)
+	_, err := pipe.Exec(ctx)
 	if err != nil {
+		fmt.Println(err)
 		return err
 	}
 
@@ -50,11 +54,27 @@ func (c Client) Set(ctx context.Context, key, val string) error {
 }
 
 func (c Client) Get(ctx context.Context, key string) (string, error) {
-	var val string
-	err := c.RedisCache.Get(ctx, key, &val)
+	val, err := c.RedisClient.Get(ctx, key).Result()
 	if err != nil {
 		return val, err
 	}
 
 	return val, nil
+}
+
+func (c Client) GetAll(ctx context.Context) ([]string, error) {
+	var vals []string
+	iter := c.RedisClient.Scan(ctx, 0, "key*", 10).Iterator()
+
+	for iter.Next(ctx) {
+		fmt.Println(iter.Val())
+		vals = append(vals, iter.Val())
+	}
+
+	if err := iter.Err(); err != nil {
+		fmt.Println(err)
+		return vals, err
+	}
+
+	return vals, nil
 }
