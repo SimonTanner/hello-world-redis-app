@@ -3,6 +3,8 @@ package api
 import (
 	"encoding/json"
 	"fmt"
+	"html/template"
+	"log"
 	"net/http"
 
 	"github.com/SimonTanner/hello-world-redis-app/redis"
@@ -18,9 +20,10 @@ type Api struct {
 
 func NewApi(redCli redis.Client) Api {
 	router := mux.NewRouter()
-	router.HandleFunc("/{key}", GetMessage).Methods("GET")
-	router.HandleFunc("/addmessage/{key}/{message}", SetMessage).Methods("GET")
+	router.HandleFunc("/message/{key}", GetMessage).Methods("GET")
+	router.HandleFunc("/add/{key}/{message}", SetMessage).Methods("GET")
 	router.HandleFunc("/", GetMessages).Methods("GET")
+	router.HandleFunc("/home", HomePage).Methods("GET", "POST")
 
 	api := Api{
 		Router:      router,
@@ -80,11 +83,34 @@ func SetMessage(w http.ResponseWriter, r *http.Request) {
 	fmt.Println(vars["key"])
 	fmt.Println(vars["message"])
 
-	fmt.Println("what??")
-
 	if err := redisClient.Set(r.Context(), vars["key"], vars["message"]); err != nil {
 		w.WriteHeader(http.StatusInternalServerError)
 	} else {
 		w.WriteHeader(http.StatusOK)
+	}
+}
+
+var testTemplate *template.Template
+
+func HomePage(w http.ResponseWriter, r *http.Request) {
+	redisClient := redis.NewClient(redis.RedisConf{
+		Address: addr,
+	})
+	testTemplate, err := template.ParseFiles("./api/hello_world.html")
+	fmt.Println(r.Method)
+	if r.Method == "GET" {
+		if err != nil {
+			log.Fatalf("error parsing file: %e", err)
+		}
+
+		w.Header().Set("Content-Type", "text/html")
+		err = testTemplate.Execute(w, nil)
+		if err != nil {
+			log.Fatalf("error rendering template: %e", err)
+		}
+	} else {
+		r.ParseForm()
+		fmt.Println(r.Form["message"])
+		redisClient.Set(r.Context(), "message", r.Form["message"][0])
 	}
 }
