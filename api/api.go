@@ -96,21 +96,31 @@ func HomePage(w http.ResponseWriter, r *http.Request) {
 	redisClient := redis.NewClient(redis.RedisConf{
 		Address: addr,
 	})
-	testTemplate, err := template.ParseFiles("./api/hello_world.html")
-	fmt.Println(r.Method)
-	if r.Method == "GET" {
-		if err != nil {
-			log.Fatalf("error parsing file: %e", err)
-		}
 
-		w.Header().Set("Content-Type", "text/html")
-		err = testTemplate.Execute(w, nil)
-		if err != nil {
-			log.Fatalf("error rendering template: %e", err)
-		}
-	} else {
+	testTemplate, err := template.ParseFiles("./api/hello_world.html")
+	if err != nil {
+		log.Fatalf("error parsing file: %e", err)
+	}
+
+	log.Print(r.Method)
+	if r.Method == "POST" {
 		r.ParseForm()
 		fmt.Println(r.Form["message"])
-		redisClient.Set(r.Context(), "message", r.Form["message"][0])
+		fmt.Println(r.Form["key"])
+		redisClient.Set(r.Context(), r.Form["key"][0], r.Form["message"][0])
+	}
+
+	log.Print("Getting all messages from Redis")
+	vals, err := redisClient.GetAll(r.Context())
+	data := struct {
+		Messages []string
+	}{
+		Messages: vals,
+	}
+
+	w.Header().Set("Content-Type", "text/html")
+	err = testTemplate.Execute(w, data)
+	if err != nil {
+		log.Fatalf("error rendering template: %e", err)
 	}
 }
