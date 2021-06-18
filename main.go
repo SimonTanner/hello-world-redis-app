@@ -14,6 +14,8 @@ func main() {
 		Address: "localhost:6379",
 	})
 
+	redis.CheckCache()
+
 	a := api.NewApi(redisClient)
 
 	server := &http.Server{

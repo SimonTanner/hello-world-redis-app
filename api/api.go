@@ -6,12 +6,16 @@ import (
 	"html/template"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/SimonTanner/hello-world-redis-app/redis"
 	"github.com/gorilla/mux"
 )
 
-const addr = "127.0.0.1:6379"
+const (
+	addr    = "127.0.0.1:6379"
+	expTime = time.Second * 10
+)
 
 type Api struct {
 	Router      *mux.Router
@@ -33,7 +37,8 @@ func NewApi(redCli redis.Client) Api {
 
 func GetMessage(w http.ResponseWriter, r *http.Request) {
 	redisClient := redis.NewClient(redis.RedisConf{
-		Address: addr,
+		Address:    addr,
+		ExpireTime: expTime,
 	})
 
 	vars := mux.Vars(r)
@@ -43,6 +48,7 @@ func GetMessage(w http.ResponseWriter, r *http.Request) {
 
 	val, err := redisClient.Get(r.Context(), key)
 	if err != nil {
+		log.Printf("Error getting message: %e", err)
 		w.WriteHeader(http.StatusInternalServerError)
 	} else {
 		w.WriteHeader(http.StatusOK)
@@ -55,7 +61,8 @@ var testTemplate *template.Template
 
 func HomePage(w http.ResponseWriter, r *http.Request) {
 	redisClient := redis.NewClient(redis.RedisConf{
-		Address: addr,
+		Address:    addr,
+		ExpireTime: expTime,
 	})
 
 	testTemplate, err := template.ParseFiles("./api/hello_world.html")

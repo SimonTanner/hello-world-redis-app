@@ -6,6 +6,7 @@ import (
 	"log"
 	"time"
 
+	"github.com/go-redis/cache/v8"
 	"github.com/go-redis/redis/v8"
 )
 
@@ -17,6 +18,7 @@ type RedisConf struct {
 
 type Client struct {
 	RedisClient *redis.Client
+	expireTime  time.Duration
 }
 
 func NewClient(c RedisConf) Client {
@@ -34,6 +36,7 @@ func NewClient(c RedisConf) Client {
 
 	cli := Client{
 		RedisClient: rdb,
+		expireTime:  c.ExpireTime,
 	}
 
 	return cli
@@ -43,7 +46,7 @@ func (c *Client) Set(ctx context.Context, key, val string) error {
 	// err := c.RedisClient.Set(ctx, key, val, 0).Err()
 
 	pipe := c.RedisClient.TxPipeline()
-	pipe.Set(ctx, key, val, 0)
+	pipe.Set(ctx, key, val, c.expireTime)
 	_, err := pipe.Exec(ctx)
 	if err != nil {
 		fmt.Println(err)
@@ -71,7 +74,6 @@ func (c *Client) GetAll(ctx context.Context) ([]string, error) {
 			err  error
 		)
 		keys, cursor, err = c.RedisClient.Scan(ctx, cursor, "*", 0).Result()
-		fmt.Println("KEYS:", keys)
 		if err != nil {
 			return vals, err
 		}
@@ -82,8 +84,12 @@ func (c *Client) GetAll(ctx context.Context) ([]string, error) {
 			if err != nil {
 				return vals, err
 			}
+			fmt.Println("CURSOR:", cursor, "KEY:", key, "VALUES:", val)
 
 			vals = append(vals, val)
+			if idx == len(keys)-1 {
+				return vals, nil
+			}
 		}
 
 		if cursor == 0 {
@@ -92,4 +98,43 @@ func (c *Client) GetAll(ctx context.Context) ([]string, error) {
 	}
 
 	return vals, nil
+}
+
+type Object struct {
+	Str string
+	Num int
+}
+
+func CheckCache() {
+	ring := redis.NewRing(&redis.RingOptions{
+		Addrs: map[string]string{
+			"server1": ":6379",
+		},
+	})
+
+	mycache := cache.New(&cache.Options{
+		Redis:      ring,
+		LocalCache: cache.NewTinyLFU(1000, time.Minute),
+	})
+
+	ctx := context.TODO()
+	key := "mykey"
+	obj := &Object{
+		Str: "mystring",
+		Num: 42,
+	}
+
+	if err := mycache.Set(&cache.Item{
+		Ctx:   ctx,
+		Key:   key,
+		Value: obj,
+		TTL:   time.Hour,
+	}); err != nil {
+		panic(err)
+	}
+
+	var wanted Object
+	if err := mycache.Get(ctx, key, &wanted); err == nil {
+		fmt.Println("wanted:", wanted)
+	}
 }
