@@ -1,15 +1,51 @@
 <html>
-    <title>Hello World!</title>
-    <h2>Hello World Messaging</h2>
-    <div>
-        <form action="/" method="post">
-            Enter message:<input id=message name="message"><br>
-            Enter Key:<input id=key name="key"><br>
-            <input type="submit" value="Enter">
-        </form>
-    </div>
-    <h3>Messages</h3>
-    <body>
-        {{range .Messages}}<li>{{ . }}</li>{{ else }}<div>No messages to display</div>{{ end }}
-    </body>
+<title>Hello World!</title>
+<h2>Hello World Messaging</h2>
+<div>
+    <form action="/" method="post">
+        Enter message:&nbsp;<input id=message name="message"><br>
+        Enter Key:&nbsp;<input id=key name="key"><br>
+        <input type="submit" value="Enter">
+    </form>
+</div>
+<h3>Messages</h3>
+
+<body>
+    {{ if .Messages }}
+    <table>
+        <th>key</th>
+        <th>message</th>
+        <tbody>
+            {{range .Messages}}
+            <tr>
+                <td>{{ .Key }}</td>
+                <td>{{ .Str }}</td>
+            </tr>
+            {{ end }}
+        </tbody>
+    </table>
+    {{ else }}
+    <div>No messages to display</div>{{ end }}
+</body>
+
 </html>
+
+<style>
+    body {
+        padding: 30px;
+        margin: 5px;
+        width: 100%;
+        display: inline-block;
+    }
+
+    td, th {
+        border: 1px solid #dddddd;
+        text-align: left;
+        padding: 8px;
+        width: 50%
+    }
+
+    tr:nth-child(even) {
+        background-color: #dddddd;
+    }
+</style>
