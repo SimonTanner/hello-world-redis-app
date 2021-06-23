@@ -2,10 +2,10 @@ package redis
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"time"
 
+	"github.com/go-redis/cache/v8"
 	"github.com/go-redis/redis/v8"
 )
 
@@ -17,6 +17,8 @@ type RedisConf struct {
 
 type Client struct {
 	RedisClient *redis.Client
+	RedisCache  *cache.Cache
+	expireTime  time.Duration
 }
 
 func NewClient(c RedisConf) Client {
@@ -27,69 +29,65 @@ func NewClient(c RedisConf) Client {
 	})
 
 	log.Print("Checking connection to redis-server")
-
 	if err := rdb.Ping(context.TODO()).Err(); err != nil {
 		log.Fatal(err)
 	}
 
+	rCache := cache.New(&cache.Options{
+		Redis:      rdb,
+		LocalCache: cache.NewTinyLFU(1000, c.ExpireTime),
+	})
+
 	cli := Client{
 		RedisClient: rdb,
+		RedisCache:  rCache,
+		expireTime:  c.ExpireTime,
 	}
 
 	return cli
 }
 
-func (c *Client) Set(ctx context.Context, key, val string) error {
-	// err := c.RedisClient.Set(ctx, key, val, 0).Err()
+type Message struct {
+	Key string `json:"key"`
+	Str string `json:"message"`
+}
 
-	pipe := c.RedisClient.TxPipeline()
-	pipe.Set(ctx, key, val, 0)
-	_, err := pipe.Exec(ctx)
-	if err != nil {
-		fmt.Println(err)
+func (c *Client) Set(ctx context.Context, key string, msg Message) error {
+	if err := c.RedisCache.Set(&cache.Item{
+		Ctx:   ctx,
+		Key:   key,
+		Value: msg,
+		TTL:   c.expireTime,
+	}); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func (c *Client) Get(ctx context.Context, key string) (string, error) {
-	val, err := c.RedisClient.Get(ctx, key).Result()
+func (c *Client) Get(ctx context.Context, key string) (Message, error) {
+	var msg Message
+	err := c.RedisCache.Get(ctx, key, &msg)
 	if err != nil {
-		return val, err
+		return msg, err
 	}
+	msg.Key = key
 
-	return val, nil
+	return msg, nil
 }
 
-func (c *Client) GetAll(ctx context.Context) ([]string, error) {
-	var vals []string
-	var cursor uint64
-	for {
-		var (
-			keys []string
-			err  error
-		)
-		keys, cursor, err = c.RedisClient.Scan(ctx, cursor, "*", 0).Result()
-		fmt.Println("KEYS:", keys)
+func (c *Client) GetAll(ctx context.Context) ([]Message, error) {
+	var msgs []Message
+	iter := c.RedisClient.Scan(ctx, 0, "*", 0).Iterator()
+	for iter.Next(ctx) {
+		// NB: Calling iter.Val() returns the key not the values as stated in docs/examples
+		key := iter.Val()
+		msg, err := c.Get(ctx, key)
 		if err != nil {
-			return vals, err
+			return msgs, err
 		}
-
-		for idx, key := range keys {
-			fmt.Println(idx, key)
-			val, err := c.RedisClient.Get(ctx, key).Result()
-			if err != nil {
-				return vals, err
-			}
-
-			vals = append(vals, val)
-		}
-
-		if cursor == 0 {
-			break
-		}
+		msgs = append(msgs, msg)
 	}
 
-	return vals, nil
+	return msgs, iter.Err()
 }

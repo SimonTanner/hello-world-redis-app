@@ -5,27 +5,33 @@ import (
 	"fmt"
 	"html/template"
 	"log"
+	"math/rand"
 	"net/http"
+	"time"
 
 	"github.com/SimonTanner/hello-world-redis-app/redis"
 	"github.com/gorilla/mux"
 )
 
-const addr = "127.0.0.1:6379"
+const (
+	addr    = "127.0.0.1:6379"
+	expTime = time.Second * 60
+	keyStr  = "key"
+)
+
+var testTemplate *template.Template
 
 type Api struct {
-	Router      *mux.Router
-	RedisClient redis.Client
+	Router *mux.Router
 }
 
-func NewApi(redCli redis.Client) Api {
+func NewApi() Api {
 	router := mux.NewRouter()
 	router.HandleFunc("/message/{key}", GetMessage).Methods("GET")
 	router.HandleFunc("/", HomePage).Methods("GET", "POST")
 
 	api := Api{
-		Router:      router,
-		RedisClient: redCli,
+		Router: router,
 	}
 
 	return api
@@ -33,29 +39,28 @@ func NewApi(redCli redis.Client) Api {
 
 func GetMessage(w http.ResponseWriter, r *http.Request) {
 	redisClient := redis.NewClient(redis.RedisConf{
-		Address: addr,
+		Address:    addr,
+		ExpireTime: expTime,
 	})
 
 	vars := mux.Vars(r)
-	fmt.Println(vars)
-
 	key := vars["key"]
 
 	val, err := redisClient.Get(r.Context(), key)
 	if err != nil {
+		log.Printf("Error getting message: %e", err)
 		w.WriteHeader(http.StatusInternalServerError)
 	} else {
 		w.WriteHeader(http.StatusOK)
-		jsvals, _ := json.Marshal(map[string]string{key: val})
+		jsvals, _ := json.Marshal(val)
 		w.Write(jsvals)
 	}
 }
 
-var testTemplate *template.Template
-
 func HomePage(w http.ResponseWriter, r *http.Request) {
 	redisClient := redis.NewClient(redis.RedisConf{
-		Address: addr,
+		Address:    addr,
+		ExpireTime: expTime,
 	})
 
 	testTemplate, err := template.ParseFiles("./api/hello_world.html")
@@ -63,20 +68,27 @@ func HomePage(w http.ResponseWriter, r *http.Request) {
 		log.Fatalf("error parsing file: %e", err)
 	}
 
-	log.Print(r.Method)
 	if r.Method == "POST" {
 		r.ParseForm()
-		fmt.Println(r.Form["message"])
-		fmt.Println(r.Form["key"])
-		redisClient.Set(r.Context(), r.Form["key"][0], r.Form["message"][0])
+		key := r.Form.Get(keyStr)
+		if key == "" {
+			rand.Seed(time.Now().UnixNano())
+			key = fmt.Sprintf("%06d", rand.Intn(10000))
+		}
+		redisClient.Set(r.Context(), key, redis.Message{Str: r.Form.Get("message")})
 	}
 
 	log.Print("Getting all messages from Redis")
-	vals, err := redisClient.GetAll(r.Context())
+	var msgs []redis.Message
+	msgs, err = redisClient.GetAll(r.Context())
+	if err != nil {
+		log.Printf("error getting messages: %e", err)
+	}
+
 	data := struct {
-		Messages []string
+		Messages []redis.Message
 	}{
-		Messages: vals,
+		Messages: msgs,
 	}
 
 	w.Header().Set("Content-Type", "text/html")

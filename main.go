@@ -6,15 +6,10 @@ import (
 	"time"
 
 	"github.com/SimonTanner/hello-world-redis-app/api"
-	"github.com/SimonTanner/hello-world-redis-app/redis"
 )
 
 func main() {
-	redisClient := redis.NewClient(redis.RedisConf{
-		Address: "localhost:6379",
-	})
-
-	a := api.NewApi(redisClient)
+	a := api.NewApi()
 
 	server := &http.Server{
 		Handler:      a.Router,
