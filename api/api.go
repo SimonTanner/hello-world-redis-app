@@ -2,8 +2,10 @@ package api
 
 import (
 	"encoding/json"
+	"fmt"
 	"html/template"
 	"log"
+	"math/rand"
 	"net/http"
 	"time"
 
@@ -13,7 +15,8 @@ import (
 
 const (
 	addr    = "127.0.0.1:6379"
-	expTime = time.Second * 300
+	expTime = time.Second * 60
+	keyStr  = "key"
 )
 
 var testTemplate *template.Template
@@ -67,14 +70,19 @@ func HomePage(w http.ResponseWriter, r *http.Request) {
 
 	if r.Method == "POST" {
 		r.ParseForm()
-		redisClient.Set(r.Context(), r.Form.Get("key"), redis.Message{Str: r.Form.Get("message")})
+		key := r.Form.Get(keyStr)
+		if key == "" {
+			rand.Seed(time.Now().UnixNano())
+			key = fmt.Sprintf("%06d", rand.Intn(10000))
+		}
+		redisClient.Set(r.Context(), key, redis.Message{Str: r.Form.Get("message")})
 	}
 
 	log.Print("Getting all messages from Redis")
 	var msgs []redis.Message
 	msgs, err = redisClient.GetAll(r.Context())
 	if err != nil {
-		log.Printf("error rendering template: %e", err)
+		log.Printf("error getting messages: %e", err)
 	}
 
 	data := struct {

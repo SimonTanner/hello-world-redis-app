@@ -2,7 +2,6 @@ package redis
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"time"
 
@@ -30,14 +29,13 @@ func NewClient(c RedisConf) Client {
 	})
 
 	log.Print("Checking connection to redis-server")
-
 	if err := rdb.Ping(context.TODO()).Err(); err != nil {
 		log.Fatal(err)
 	}
 
 	rCache := cache.New(&cache.Options{
 		Redis:      rdb,
-		LocalCache: cache.NewTinyLFU(1000, time.Minute),
+		LocalCache: cache.NewTinyLFU(1000, c.ExpireTime),
 	})
 
 	cli := Client{
@@ -50,8 +48,8 @@ func NewClient(c RedisConf) Client {
 }
 
 type Message struct {
-	Key string
-	Str string
+	Key string `json:"key"`
+	Str string `json:"message"`
 }
 
 func (c *Client) Set(ctx context.Context, key string, msg Message) error {
@@ -82,7 +80,7 @@ func (c *Client) GetAll(ctx context.Context) ([]Message, error) {
 	var msgs []Message
 	iter := c.RedisClient.Scan(ctx, 0, "*", 0).Iterator()
 	for iter.Next(ctx) {
-		fmt.Println("Key:", iter.Val())
+		// NB: Calling iter.Val() returns the key not the values as stated in docs/examples
 		key := iter.Val()
 		msg, err := c.Get(ctx, key)
 		if err != nil {
